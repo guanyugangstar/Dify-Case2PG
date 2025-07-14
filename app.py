@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify, Response
 import requests
 import json
+import psycopg2
 
 app = Flask(__name__)
 
@@ -52,6 +53,30 @@ EXT_FILETYPE_MAP = {
     # 视频
     'mp4': 'video', 'mov': 'video', 'mpeg': 'video',
 }
+
+last_workflow_outputs = []  # 临时存储最近一次dify工作流完整输出
+
+# 数据库连接参数（请根据实际情况调整）
+DB_CONFIG = {
+    'host': 'localhost',
+    'port': 5432,
+    'user': 'postgres',
+    'password': 'Gululu4-',
+    'dbname': 'postgres'
+}
+
+def query_table(table_name, limit=20):
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor()
+        cur.execute(f'SELECT * FROM {table_name} LIMIT %s', (limit,))
+        columns = [desc[0] for desc in cur.description]
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return {'columns': columns, 'rows': rows}
+    except Exception as e:
+        return {'error': str(e)}
 
 def guess_type(file):
     mime = file.mimetype
@@ -113,6 +138,8 @@ def upload():
         }
         # --- SSE流式转发 ---
         def generate():
+            global last_workflow_outputs
+            last_workflow_outputs = []  # 每次新上传清空
             with requests.post(
                 f"{API_URL}/workflows/run",
                 headers={
@@ -123,16 +150,55 @@ def upload():
                 stream=True
             ) as resp2:
                 if resp2.status_code != 200:
-                    # 直接返回错误JSON
                     yield f"data: {{\"error\": \"workflow执行失败\", \"detail\": {json.dumps(resp2.text)}, \"status_code\": {resp2.status_code}, \"headers\": {json.dumps(dict(resp2.headers))}}}\n\n"
                     return
                 for line in resp2.iter_lines():
                     if line:
+                        try:
+                            # 只处理以data:开头的SSE行
+                            if line.startswith(b'data:'):
+                                json_str = line[5:].decode('utf-8').strip()
+                                obj = json.loads(json_str)
+                                last_workflow_outputs.append(obj)
+                        except Exception:
+                            pass  # 忽略解析失败
                         yield line + b'\n'
         return Response(generate(), mimetype='text/event-stream')
     except Exception as e:
         # 可选：生产环境可记录日志
         return "Internal Server Error: " + str(e), 500
+
+@app.route("/get_table_data", methods=["GET"])
+def get_table_data():
+    global last_workflow_outputs
+    if not last_workflow_outputs:
+        return jsonify({'error': '暂无工作流输出，请先上传并处理文件'}), 400
+    # 遍历所有json体，查找event为node_finished且data.title为“问题分类器”的节点
+    classifier_node = None
+    for obj in last_workflow_outputs:
+        if isinstance(obj, dict) and obj.get('event') == 'node_finished':
+            data = obj.get('data', {})
+            if data.get('title') == '问题分类器':
+                classifier_node = data
+                break
+    if not classifier_node:
+        return jsonify({'error': '未找到“问题分类器”节点'}), 400
+    outputs = classifier_node.get('outputs')
+    class_name = None
+    if outputs and isinstance(outputs, dict):
+        class_name = outputs.get('class_name')
+    if not class_name:
+        return jsonify({'error': '“问题分类器”节点缺少class_name', 'outputs': outputs}), 400
+    table_map = {
+        '合同': 'contract_summary',
+        '复议': 'reconsideration_summary',
+        '诉讼': 'case_summary'
+    }
+    table = table_map.get(class_name)
+    if not table:
+        return jsonify({'error': f'class_name为{class_name}，无对应表格'}), 400
+    result = query_table(table)
+    return jsonify(result)
 
 if __name__ == "__main__":
     app.run(debug=False, host="0.0.0.0", port=8888)

@@ -73,11 +73,11 @@
             box-shadow: 0 4px 16px rgba(0,122,255,0.12);
         }
         #result {
-            margin-top: 32px;
+            margin-top: 8px;
             width: 100%;
             background: #f5f7fa;
             border-radius: 12px;
-            min-height: 64px;
+            min-height: 96px;
             box-shadow: 0 1.5px 4px rgba(0,0,0,0.03);
             padding: 20px 18px;
             font-size: 1rem;
@@ -85,13 +85,95 @@
             word-break: break-all;
             transition: background 0.2s;
         }
-        @media (max-width: 600px) {
-            .container {
-                padding: 24px 8px 16px 8px;
-                max-width: 98vw;
+        #showTableBtn {
+            margin-top: 24px;
+            width: 100%;
+            background: #4caf50;
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(76,175,80,0.08);
+            cursor: pointer;
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+        #showTableBtn:hover {
+            background: #388e3c;
+            box-shadow: 0 4px 16px rgba(76,175,80,0.12);
+        }
+        /* Modal styles */
+        .modal-mask {
+            position: fixed;
+            z-index: 1000;
+            left: 0; top: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.25);
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-mask.active {
+            display: flex;
+        }
+        .modal {
+            background: #fff;
+            border-radius: 18px;
+            box-shadow: 0 8px 32px rgba(60,60,60,0.18), 0 1.5px 4px rgba(0,0,0,0.06);
+            min-width: 900px;
+            max-width: 98vw;
+            max-height: 90vh;
+            padding: 32px 24px 24px 24px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+        }
+        .modal-close {
+            position: absolute;
+            right: 18px;
+            top: 12px;
+            font-size: 1.5rem;
+            color: #888;
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+        .modal-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 18px;
+        }
+        .modal-table-wrapper {
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: 60vh;
+            min-width: 800px;
+        }
+        .modal-table-wrapper table {
+            width: max-content;
+            min-width: 100%;
+            border-collapse: collapse;
+        }
+        .modal-table-wrapper th, .modal-table-wrapper td {
+            border: 1px solid #ccc;
+            padding: 4px 8px;
+            text-align: left;
+        }
+        .modal-table-wrapper th {
+            background: #eafbe7;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        @media (max-width: 1000px) {
+            .modal {
+                min-width: 0;
+                width: 98vw;
+                padding: 12px 2vw 12px 2vw;
             }
-            #result {
-                padding: 12px 6px;
+            .modal-table-wrapper {
+                min-width: 0;
             }
         }
     </style>
@@ -104,6 +186,18 @@
             <button type="submit">上传并处理</button>
         </form>
         <div id="result"></div>
+        <button id="showTableBtn">显示数据库表格</button>
+        <div style="height:64px;"></div>
+    </div>
+    <!-- Modal for table -->
+    <div class="modal-mask" id="modalMask">
+        <div class="modal">
+            <button class="modal-close" id="modalCloseBtn" title="关闭">×</button>
+            <div class="modal-title">数据库表格</div>
+            <div class="modal-table-wrapper">
+                <div id="modalTableResult">正在加载表格数据...</div>
+            </div>
+        </div>
     </div>
     <script>
         document.getElementById('uploadForm').onsubmit = function(e) {
@@ -144,6 +238,46 @@
             };
             xhr.send(formData);
         }
+        // Modal logic
+        const showTableBtn = document.getElementById('showTableBtn');
+        const modalMask = document.getElementById('modalMask');
+        const modalCloseBtn = document.getElementById('modalCloseBtn');
+        const modalTableResult = document.getElementById('modalTableResult');
+        showTableBtn.onclick = function() {
+            modalMask.classList.add('active');
+            modalTableResult.innerHTML = '正在加载表格数据...';
+            fetch('/get_table_data').then(r => r.json()).then(data => {
+                if (data.error) {
+                    modalTableResult.innerHTML = '<span style="color:red">' + data.error + '</span>';
+                    return;
+                }
+                if (!data.columns || !data.rows) {
+                    modalTableResult.innerHTML = '<span style="color:red">无有效表格数据</span>';
+                    return;
+                }
+                let html = '<table>';
+                html += '<tr>' + data.columns.map(col => '<th>'+col+'</th>').join('') + '</tr>';
+                data.rows.forEach(row => {
+                    html += '<tr>' + row.map(cell => '<td>'+cell+'</td>').join('') + '</tr>';
+                });
+                html += '</table>';
+                modalTableResult.innerHTML = html;
+            }).catch(e => {
+                modalTableResult.innerHTML = '<span style="color:red">请求失败</span>';
+            });
+        };
+        function closeModal() {
+            modalMask.classList.remove('active');
+        }
+        modalCloseBtn.onclick = closeModal;
+        modalMask.onclick = function(e) {
+            if (e.target === modalMask) closeModal();
+        };
+        document.addEventListener('keydown', function(e) {
+            if (modalMask.classList.contains('active') && (e.key === 'Escape' || e.key === 'Esc')) {
+                closeModal();
+            }
+        });
     </script>
 </body>
 </html> 
