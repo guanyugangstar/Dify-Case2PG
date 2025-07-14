@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>行政案件数据库系统v3.0 - 文件上传</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body {
+            background: #f7f7fa;
+            font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: #fff;
+            border-radius: 24px;
+            box-shadow: 0 8px 32px rgba(60,60,60,0.08), 0 1.5px 4px rgba(0,0,0,0.03);
+            padding: 48px 36px 36px 36px;
+            max-width: 420px;
+            width: 100%;
+            margin: 40px 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 32px;
+            color: #222;
+            letter-spacing: 1px;
+        }
+        #uploadForm {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        input[type="file"] {
+            border: 1.5px solid #e0e0e5;
+            border-radius: 12px;
+            padding: 12px 16px;
+            background: #fafbfc;
+            font-size: 1rem;
+            margin-bottom: 24px;
+            width: 100%;
+            transition: border 0.2s;
+        }
+        input[type="file"]:focus {
+            border: 1.5px solid #007aff;
+            outline: none;
+        }
+        button[type="submit"] {
+            background: linear-gradient(90deg, #007aff 60%, #4f8cff 100%);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+            width: 100%;
+            box-shadow: 0 2px 8px rgba(0,122,255,0.08);
+            cursor: pointer;
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+        button[type="submit"]:hover {
+            background: linear-gradient(90deg, #0051a8 60%, #007aff 100%);
+            box-shadow: 0 4px 16px rgba(0,122,255,0.12);
+        }
+        #result {
+            margin-top: 32px;
+            width: 100%;
+            background: #f5f7fa;
+            border-radius: 12px;
+            min-height: 64px;
+            box-shadow: 0 1.5px 4px rgba(0,0,0,0.03);
+            padding: 20px 18px;
+            font-size: 1rem;
+            color: #222;
+            word-break: break-all;
+            transition: background 0.2s;
+        }
+        @media (max-width: 600px) {
+            .container {
+                padding: 24px 8px 16px 8px;
+                max-width: 98vw;
+            }
+            #result {
+                padding: 12px 6px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>行政案件数据库系统 v3.0</h1>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <input type="file" name="input_data" multiple required>
+            <button type="submit">上传并处理</button>
+        </form>
+        <div id="result"></div>
+    </div>
+    <script>
+        document.getElementById('uploadForm').onsubmit = function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const resDiv = document.getElementById('result');
+            resDiv.innerHTML = "处理中...";
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload', true);
+            xhr.responseType = 'text';
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200) {
+                        if (window.sse) window.sse.close();
+                        resDiv.innerHTML = '';
+                        const lines = xhr.responseText.split('\n');
+                        lines.forEach(function(line) {
+                            if (line.startsWith('data:')) {
+                                try {
+                                    const json = JSON.parse(line.slice(5));
+                                    if (json.event === 'workflow_finished') {
+                                        const task_id = json.task_id || (json.data && json.data.id);
+                                        const status = json.data && json.data.status;
+                                        const output = json.data && json.data.outputs && json.data.outputs.output;
+                                        resDiv.innerHTML = '<b>task_id:</b> ' + task_id + '<br>' +
+                                                          '<b>status:</b> ' + status + '<br>' +
+                                                          '<b>output:</b> <pre>' + JSON.stringify(output, null, 2) + '</pre>';
+                                    }
+                                } catch (e) {
+                                    // 忽略解析失败的块
+                                }
+                            }
+                        });
+                    } else {
+                        resDiv.innerHTML = '上传或处理失败: ' + xhr.status + '<br>' + xhr.responseText;
+                    }
+                }
+            };
+            xhr.send(formData);
+        }
+    </script>
+</body>
+</html> 
