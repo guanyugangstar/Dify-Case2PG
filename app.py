@@ -65,7 +65,7 @@ DB_CONFIG = {
     'dbname': 'postgres'
 }
 
-def query_table(table_name, limit=20):
+def query_table(table_name, limit=100):
     try:
         conn = psycopg2.connect(**DB_CONFIG)
         cur = conn.cursor()

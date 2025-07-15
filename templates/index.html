@@ -121,7 +121,7 @@
             border-radius: 18px;
             box-shadow: 0 8px 32px rgba(60,60,60,0.18), 0 1.5px 4px rgba(0,0,0,0.06);
             min-width: 900px;
-            max-width: 98vw;
+                max-width: 98vw;
             max-height: 90vh;
             padding: 32px 24px 24px 24px;
             display: flex;
@@ -166,6 +166,79 @@
             top: 0;
             z-index: 1;
         }
+        .modal-table-wrapper td.truncated {
+            cursor: pointer;
+            color: #007aff;
+            background: #f0f7ff;
+            position: relative;
+            text-decoration: underline dotted;
+        }
+        .modal-table-wrapper td.truncated:hover {
+            background: #e3f0ff;
+            color: #0051a8;
+            text-decoration: underline solid;
+        }
+        /* 单元格内容弹窗 */
+        .cell-modal-mask {
+            position: fixed;
+            z-index: 2000;
+            left: 0; top: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.18);
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .cell-modal-mask.active {
+            display: flex;
+        }
+        .cell-modal {
+            background: #fff;
+            border-radius: 18px;
+            box-shadow: 0 8px 32px rgba(60,60,60,0.18), 0 1.5px 4px rgba(0,0,0,0.06);
+            min-width: 240px;
+            max-width: 80vw;
+            max-height: 70vh;
+            padding: 32px 24px 24px 24px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: auto;
+        }
+        .cell-modal-close {
+            position: absolute;
+            right: 12px;
+            top: 8px;
+            font-size: 1.3rem;
+            color: #888;
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+        .cell-modal-content {
+            font-size: 1.15rem;
+            color: #222;
+            word-break: break-all;
+            margin-top: 12px;
+            white-space: pre-wrap;
+            user-select: text;
+            padding: 8px 0;
+        }
+        .cell-modal-copy {
+            margin-top: 8px;
+            align-self: flex-end;
+            background: #f0f7ff;
+            color: #007aff;
+            border: none;
+            border-radius: 8px;
+            padding: 4px 12px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .cell-modal-copy:hover {
+            background: #e3f0ff;
+            color: #0051a8;
+        }
         @media (max-width: 1000px) {
             .modal {
                 min-width: 0;
@@ -197,6 +270,14 @@
             <div class="modal-table-wrapper">
                 <div id="modalTableResult">正在加载表格数据...</div>
             </div>
+        </div>
+    </div>
+    <!-- Modal for cell full content -->
+    <div class="cell-modal-mask" id="cellModalMask">
+        <div class="cell-modal">
+            <button class="cell-modal-close" id="cellModalCloseBtn" title="关闭">×</button>
+            <div class="cell-modal-content" id="cellModalContent"></div>
+            <button class="cell-modal-copy" id="cellModalCopyBtn" title="复制内容">复制</button>
         </div>
     </div>
     <script>
@@ -258,10 +339,30 @@
                 let html = '<table>';
                 html += '<tr>' + data.columns.map(col => '<th>'+col+'</th>').join('') + '</tr>';
                 data.rows.forEach(row => {
-                    html += '<tr>' + row.map(cell => '<td>'+cell+'</td>').join('') + '</tr>';
+                    html += '<tr>' + row.map(cell => {
+                        if (cell && typeof cell === 'string' && cell.length > 20) {
+                            const display = cell.slice(0, 20) + '……';
+                            return `<td class="truncated" data-full="${encodeURIComponent(cell)}">${display}</td>`;
+                        } else if (cell && typeof cell === 'number' && String(cell).length > 20) {
+                            const display = String(cell).slice(0, 20) + '……';
+                            return `<td class="truncated" data-full="${encodeURIComponent(cell)}">${display}</td>`;
+                        } else if (cell && typeof cell === 'string') {
+                            return `<td>${cell}</td>`;
+                        } else {
+                            return `<td>${cell === null ? '' : cell}</td>`;
+                        }
+                    }).join('') + '</tr>';
                 });
                 html += '</table>';
                 modalTableResult.innerHTML = html;
+                // 绑定点击事件
+                Array.from(modalTableResult.querySelectorAll('td.truncated')).forEach(function(td) {
+                    td.onclick = function(e) {
+                        const full = decodeURIComponent(td.getAttribute('data-full'));
+                        document.getElementById('cellModalContent').textContent = full;
+                        document.getElementById('cellModalMask').classList.add('active');
+                    };
+                });
             }).catch(e => {
                 modalTableResult.innerHTML = '<span style="color:red">请求失败</span>';
             });
@@ -276,6 +377,27 @@
         document.addEventListener('keydown', function(e) {
             if (modalMask.classList.contains('active') && (e.key === 'Escape' || e.key === 'Esc')) {
                 closeModal();
+            }
+        });
+        // cell modal 关闭逻辑
+        const cellModalMask = document.getElementById('cellModalMask');
+        const cellModalCloseBtn = document.getElementById('cellModalCloseBtn');
+        const cellModalCopyBtn = document.getElementById('cellModalCopyBtn');
+        cellModalCloseBtn.onclick = function() {
+            cellModalMask.classList.remove('active');
+        };
+        cellModalMask.onclick = function(e) {
+            if (e.target === cellModalMask) cellModalMask.classList.remove('active');
+        };
+        cellModalCopyBtn.onclick = function() {
+            const content = document.getElementById('cellModalContent').textContent;
+            navigator.clipboard.writeText(content);
+            cellModalCopyBtn.textContent = '已复制';
+            setTimeout(()=>{cellModalCopyBtn.textContent='复制';}, 1200);
+        };
+        document.addEventListener('keydown', function(e) {
+            if (cellModalMask.classList.contains('active') && (e.key === 'Escape' || e.key === 'Esc')) {
+                cellModalMask.classList.remove('active');
             }
         });
     </script>
