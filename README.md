@@ -48,6 +48,17 @@
 - Flask后端通过`/v1/workflows/run`接口与Dify对接，采用`multipart/form-data`格式上传文件，workflow调用为SSE流式（streaming模式）。
 - 需保证Dify工作流Start节点变量名为`input_data`，类型为`file-list`。
 
+## 一键启动说明
+
+1. 确保已安装Python 3.7及以上版本。
+2. 直接双击项目根目录下的 `start.bat` 脚本：
+   - 自动创建虚拟环境（venv）
+   - 自动安装所有依赖
+   - 自动启动Flask服务
+3. 浏览器访问 http://localhost:8888
+
+无需手动pip安装，所有依赖和静态资源均已本地化，适合新手一键部署。
+
 ## 目录结构
 ```
 ├── app.py           # Flask主程序
