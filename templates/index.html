@@ -257,7 +257,11 @@
     <div class="container">
         <h1>行政案件数据库录入系统 v3.0</h1>
         <form id="uploadForm" enctype="multipart/form-data">
-            <input type="file" name="input_data" multiple required>
+            <input type="file" name="input_data" multiple>
+            <div id="cameraUploadArea" style="width:100%;display:flex;flex-direction:column;align-items:center;margin-bottom:16px;">
+                <button type="button" id="openCameraBtn" style="background:linear-gradient(90deg,#4caf50 60%,#8bc34a 100%);color:#fff;border:none;border-radius:12px;padding:12px 0;font-size:1.1rem;font-weight:600;width:100%;box-shadow:0 2px 8px rgba(76,175,80,0.08);cursor:pointer;transition:background 0.2s,box-shadow 0.2s;margin-bottom:8px;">拍照上传</button>
+                <div id="photoPreviewList" style="width:100%;display:flex;flex-wrap:wrap;gap:8px;"></div>
+            </div>
             <button type="submit">上传并处理</button>
         </form>
         <div id="result"></div>
@@ -285,46 +289,23 @@
             <button class="cell-modal-copy" id="cellModalCopyBtn" title="复制内容">复制</button>
         </div>
     </div>
+    <!-- Camera Modal -->
+    <div class="modal-mask" id="cameraModalMask">
+        <div class="modal" style="min-width:340px;max-width:98vw;max-height:90vh;padding:24px 12px;align-items:center;">
+            <button class="modal-close" id="cameraModalCloseBtn" title="关闭">×</button>
+            <div class="modal-title" style="margin-bottom:8px;">拍照上传</div>
+            <video id="cameraVideo" autoplay playsinline style="width:320px;height:240px;background:#222;border-radius:12px;"></video>
+            <canvas id="cameraCanvas" width="320" height="240" style="display:none;"></canvas>
+            <div style="margin-top:12px;display:flex;gap:12px;justify-content:center;align-items:center;">
+                <button id="takePhotoBtn" style="background:#007aff;color:#fff;border:none;border-radius:12px;padding:10px 32px;font-size:1.1rem;font-weight:600;box-shadow:0 2px 8px rgba(0,122,255,0.08);cursor:pointer;">拍照</button>
+                <button id="confirmPhotosBtn" style="background:#4caf50;color:#fff;border:none;border-radius:12px;padding:10px 32px;font-size:1.1rem;font-weight:600;box-shadow:0 2px 8px rgba(76,175,80,0.08);cursor:pointer;">确认</button>
+            </div>
+            <div id="cameraPhotoPreviewList" style="margin-top:12px;width:100%;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;"></div>
+            <div id="cameraErrorMsg" style="color:red;margin-top:8px;"></div>
+        </div>
+    </div>
     <script>
         console.log('SheetJS XLSX type:', typeof XLSX);
-        document.getElementById('uploadForm').onsubmit = function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            const resDiv = document.getElementById('result');
-            resDiv.innerHTML = "处理中...";
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', '/upload', true);
-            xhr.responseType = 'text';
-            xhr.onreadystatechange = function() {
-                if (xhr.readyState === 4) {
-                    if (xhr.status === 200) {
-                        if (window.sse) window.sse.close();
-                        resDiv.innerHTML = '';
-                        const lines = xhr.responseText.split('\n');
-                        lines.forEach(function(line) {
-                            if (line.startsWith('data:')) {
-                                try {
-                                    const json = JSON.parse(line.slice(5));
-                                    if (json.event === 'workflow_finished') {
-                                        const task_id = json.task_id || (json.data && json.data.id);
-                                        const status = json.data && json.data.status;
-                                        const output = json.data && json.data.outputs && json.data.outputs.output;
-                                        resDiv.innerHTML = '<b>task_id:</b> ' + task_id + '<br>' +
-                                                          '<b>status:</b> ' + status + '<br>' +
-                                                          '<b>output:</b> <pre>' + JSON.stringify(output, null, 2) + '</pre>';
-                                    }
-                                } catch (e) {
-                                    // 忽略解析失败的块
-                                }
-                            }
-                        });
-                    } else {
-                        resDiv.innerHTML = '上传或处理失败: ' + xhr.status + '<br>' + xhr.responseText;
-                    }
-                }
-            };
-            xhr.send(formData);
-        }
         // Modal logic
         const showTableBtn = document.getElementById('showTableBtn');
         const modalMask = document.getElementById('modalMask');
@@ -430,6 +411,157 @@
                 cellModalMask.classList.remove('active');
             }
         });
+        // ====== Camera Upload Logic ======
+        const openCameraBtn = document.getElementById('openCameraBtn');
+        const cameraModalMask = document.getElementById('cameraModalMask');
+        const cameraModalCloseBtn = document.getElementById('cameraModalCloseBtn');
+        const cameraVideo = document.getElementById('cameraVideo');
+        const cameraCanvas = document.getElementById('cameraCanvas');
+        const takePhotoBtn = document.getElementById('takePhotoBtn');
+        const confirmPhotosBtn = document.getElementById('confirmPhotosBtn');
+        const cameraPhotoPreviewList = document.getElementById('cameraPhotoPreviewList');
+        const cameraErrorMsg = document.getElementById('cameraErrorMsg');
+        const photoPreviewList = document.getElementById('photoPreviewList');
+        let cameraStream = null;
+        let cameraPhotos = [];
+        // 打开摄像头Modal
+        openCameraBtn.onclick = async function() {
+            cameraErrorMsg.textContent = '';
+            cameraPhotoPreviewList.innerHTML = '';
+            cameraPhotos = [];
+            cameraModalMask.classList.add('active');
+            try {
+                cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                cameraVideo.srcObject = cameraStream;
+            } catch (e) {
+                cameraErrorMsg.textContent = '无法访问摄像头：' + (e.message || e);
+            }
+        };
+        // 关闭摄像头Modal
+        function closeCameraModal() {
+            cameraModalMask.classList.remove('active');
+            cameraVideo.srcObject = null;
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+        }
+        cameraModalCloseBtn.onclick = closeCameraModal;
+        cameraModalMask.onclick = function(e) {
+            if (e.target === cameraModalMask) closeCameraModal();
+        };
+        document.addEventListener('keydown', function(e) {
+            if (cameraModalMask.classList.contains('active') && (e.key === 'Escape' || e.key === 'Esc')) {
+                closeCameraModal();
+            }
+        });
+        // 拍照
+        takePhotoBtn.onclick = function() {
+            if (!cameraStream) return;
+            cameraCanvas.getContext('2d').drawImage(cameraVideo, 0, 0, cameraCanvas.width, cameraCanvas.height);
+            cameraCanvas.toBlob(function(blob) {
+                if (!blob) return;
+                const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
+                cameraPhotos.push(file);
+                renderCameraPhotoPreview();
+            }, 'image/jpeg', 0.95);
+        };
+        // 渲染拍照预览
+        function renderCameraPhotoPreview() {
+            cameraPhotoPreviewList.innerHTML = '';
+            cameraPhotos.forEach((file, idx) => {
+                const url = URL.createObjectURL(file);
+                const div = document.createElement('div');
+                div.style.position = 'relative';
+                div.style.display = 'inline-block';
+                div.innerHTML = `<img src="${url}" style="width:64px;height:48px;object-fit:cover;border-radius:8px;border:1.5px solid #e0e0e5;"/><button style="position:absolute;top:0;right:0;background:#f44336;color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:1rem;cursor:pointer;" title="删除">×</button>`;
+                div.querySelector('button').onclick = function() {
+                    cameraPhotos.splice(idx, 1);
+                    renderCameraPhotoPreview();
+                };
+                cameraPhotoPreviewList.appendChild(div);
+            });
+        }
+        // 确认拍照，加入主上传队列
+        confirmPhotosBtn.onclick = function() {
+            cameraPhotos.forEach(file => addPhotoToUploadList(file));
+            closeCameraModal();
+        };
+        // 主上传队列管理
+        let uploadPhotos = [];
+        function addPhotoToUploadList(file) {
+            uploadPhotos.push(file);
+            renderPhotoPreviewList();
+        }
+        function renderPhotoPreviewList() {
+            photoPreviewList.innerHTML = '';
+            uploadPhotos.forEach((file, idx) => {
+                const url = URL.createObjectURL(file);
+                const div = document.createElement('div');
+                div.style.position = 'relative';
+                div.style.display = 'inline-block';
+                div.innerHTML = `<img src="${url}" style="width:64px;height:48px;object-fit:cover;border-radius:8px;border:1.5px solid #e0e0e5;"/><button style="position:absolute;top:0;right:0;background:#f44336;color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:1rem;cursor:pointer;" title="删除">×</button>`;
+                div.querySelector('button').onclick = function() {
+                    uploadPhotos.splice(idx, 1);
+                    renderPhotoPreviewList();
+                };
+                photoPreviewList.appendChild(div);
+            });
+        }
+        // 上传表单提交时，合并本地文件和拍照图片
+        document.getElementById('uploadForm').onsubmit = function(e) {
+            e.preventDefault();
+            const formData = new FormData();
+            // 本地文件
+            const fileInput = this.querySelector('input[type="file"]');
+            let fileCount = fileInput.files.length;
+            let photoCount = uploadPhotos.length;
+            if (fileCount === 0 && photoCount === 0) {
+                alert('请选择一个或拍摄一张照片');
+                return;
+            }
+            for (let i = 0; i < fileInput.files.length; ++i) {
+                formData.append('input_data', fileInput.files[i]);
+            }
+            // 拍照图片
+            uploadPhotos.forEach(file => {
+                formData.append('input_data', file);
+            });
+            const resDiv = document.getElementById('result');
+            resDiv.innerHTML = "处理中...";
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload', true);
+            xhr.responseType = 'text';
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200) {
+                        if (window.sse) window.sse.close();
+                        resDiv.innerHTML = '';
+                        const lines = xhr.responseText.split('\n');
+                        lines.forEach(function(line) {
+                            if (line.startsWith('data:')) {
+                                try {
+                                    const json = JSON.parse(line.slice(5));
+                                    if (json.event === 'workflow_finished') {
+                                        const task_id = json.task_id || (json.data && json.data.id);
+                                        const status = json.data && json.data.status;
+                                        const output = json.data && json.data.outputs && json.data.outputs.output;
+                                        resDiv.innerHTML = '<b>task_id:</b> ' + task_id + '<br>' +
+                                                          '<b>status:</b> ' + status + '<br>' +
+                                                          '<b>output:</b> <pre>' + JSON.stringify(output, null, 2) + '</pre>';
+                                    }
+                                } catch (e) {
+                                    // 忽略解析失败的块
+                                }
+                            }
+                        });
+                    } else {
+                        resDiv.innerHTML = '上传或处理失败: ' + xhr.status + '<br>' + xhr.responseText;
+                    }
+                }
+            };
+            xhr.send(formData);
+        };
     </script>
 </body>
 </html> 
