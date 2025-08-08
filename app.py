@@ -7,7 +7,6 @@ app = Flask(__name__)
 
 API_URL = "http://localhost/v1"
 API_KEY = "app-Nfqyj2jlcOMxNKFhOnekv9tr"  # 请根据实际情况调整
-WORKFLOW_ID = "C3DkottL68M7X1Ic"         # 请根据实际情况调整
 USER_ID = "abc-123"                      # 可自定义
 
 # 文件类型映射
@@ -131,7 +130,6 @@ def upload():
             for fid, ftype in zip(upload_file_ids, file_types)
         ]
         payload = {
-            "workflow_id": WORKFLOW_ID,
             "inputs": {"input_data": input_data},
             "response_mode": "streaming",
             "user": USER_ID

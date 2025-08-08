@@ -327,11 +327,11 @@
                 html += '<tr>' + data.columns.map(col => '<th>'+col+'</th>').join('') + '</tr>';
                 data.rows.forEach(row => {
                     html += '<tr>' + row.map(cell => {
-                        if (cell && typeof cell === 'string' && cell.length > 30) {
-                            const display = cell.slice(0, 30) + '……';
+                        if (cell && typeof cell === 'string' && cell.length > 20) {
+                            const display = cell.slice(0, 20) + '……';
                             return `<td class="truncated" data-full="${encodeURIComponent(cell)}">${display}</td>`;
-                        } else if (cell && typeof cell === 'number' && String(cell).length > 30) {
-                            const display = String(cell).slice(0, 30) + '……';
+                        } else if (cell && typeof cell === 'number' && String(cell).length > 20) {
+                            const display = String(cell).slice(0, 20) + '……';
                             return `<td class="truncated" data-full="${encodeURIComponent(cell)}">${display}</td>`;
                         } else if (cell && typeof cell === 'string') {
                             return `<td>${cell}</td>`;
@@ -372,13 +372,83 @@
                 const table = modalTableResult.querySelector('table');
                 if (!table) { alert('无表格可导出'); return; }
                 const headers = Array.from(table.querySelectorAll('th')).map(th => th.textContent);
+                
+                // 处理数据行，直接使用完整文本
                 const rows = Array.from(table.querySelectorAll('tr')).slice(1).map(tr =>
                     Array.from(tr.querySelectorAll('td')).map(td => {
                         return td.hasAttribute('data-full') ? decodeURIComponent(td.getAttribute('data-full')) : td.textContent;
                     })
                 );
+                
+                // 创建工作表数据（使用完整文本）
                 const data = [headers, ...rows];
                 const ws = XLSX.utils.aoa_to_sheet(data);
+                
+                // 设置样式
+                const range = XLSX.utils.decode_range(ws['!ref']);
+                
+                // 设置行高为双倍普通高度（32像素）
+                ws['!rows'] = [];
+                for (let row = 0; row <= range.e.r; row++) {
+                    ws['!rows'][row] = {hpt: 32}; // 32像素高度
+                }
+                
+                // 表头样式（第一行）
+                for (let col = range.s.c; col <= range.e.c; col++) {
+                    const cellAddress = XLSX.utils.encode_cell({r: 0, c: col});
+                    if (!ws[cellAddress]) ws[cellAddress] = {v: headers[col]};
+                    ws[cellAddress].s = {
+                        fill: {fgColor: {rgb: "EAFBE7"}}, // 浅绿色背景
+                        font: {
+                            bold: true, // 加粗字体
+                            sz: 12, // 字体大小
+                            name: "宋体" // 字体名称
+                        },
+                        border: {
+                            top: {style: "thin", color: {rgb: "CCCCCC"}},
+                            bottom: {style: "thin", color: {rgb: "CCCCCC"}},
+                            left: {style: "thin", color: {rgb: "CCCCCC"}},
+                            right: {style: "thin", color: {rgb: "CCCCCC"}}
+                        },
+                        alignment: {horizontal: "left", vertical: "center", wrapText: true}
+                    };
+                }
+                
+                // 数据行样式
+                for (let row = 1; row <= range.e.r; row++) {
+                    for (let col = range.s.c; col <= range.e.c; col++) {
+                        const cellAddress = XLSX.utils.encode_cell({r: row, c: col});
+                        
+                        // 确保所有单元格都有样式，包括空单元格
+                        if (!ws[cellAddress]) ws[cellAddress] = {v: ""};
+                        
+                        // 统一设置所有单元格的样式
+                        ws[cellAddress].s = {
+                            border: {
+                                top: {style: "thin", color: {rgb: "CCCCCC"}},
+                                bottom: {style: "thin", color: {rgb: "CCCCCC"}},
+                                left: {style: "thin", color: {rgb: "CCCCCC"}},
+                                right: {style: "thin", color: {rgb: "CCCCCC"}}
+                            },
+                            alignment: {horizontal: "left", vertical: "center", wrapText: true}
+                        };
+                    }
+                }
+                
+                // 根据表头内容设置不同的列宽
+                ws['!cols'] = [];
+                for (let col = range.s.c; col <= range.e.c; col++) {
+                    const headerText = headers[col];
+                    let columnWidth = 18; // 默认150像素（约18个字符宽度）
+                    
+                    // 为特定列设置250像素宽度（约30个字符宽度）
+                    if (headerText === "合同简介" || headerText === "原文内容") {
+                        columnWidth = 30; // 250像素约等于30个字符宽度
+                    }
+                    
+                    ws['!cols'][col] = {width: columnWidth};
+                }
+                
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
                 const now = new Date();
